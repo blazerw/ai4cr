@@ -1,7 +1,7 @@
 # Ported By:: Daniel Huffman
 # Url::       https://github.com/drhuffman12/ai4cr
 #
-# Based on::  Ai4r
+# Based on::  Ai4cr
 #   Author::  Sergio Fierens
 #   License:: MPL 1.1
 #   Project:: ai4r
