@@ -15,11 +15,12 @@ module Ai4cr
     module Statistics
 
       # Get the sample mean
-      def self.mean(data_set, attribute)
+      def self.mean(data_set, attribute) : Float64
         index = data_set.get_index(attribute)
         sum = 0.0
-        data_set.data_items.each { |item| sum += item[index] }
-        return sum / data_set.data_items.length
+        # data_set.data_items.each { |item| sum += item[index] }
+        data_set.data_items.sum { |item| sum = sum + (item[index].is_a?(Number) ? item[index].to_f64 : 0_f64) }
+        return sum / data_set.data_items.size
       end
 
       # Get the variance.
@@ -29,7 +30,7 @@ module Ai4cr
         mean = mean(data_set, attribute)
         sum = 0.0
         data_set.data_items.each { |item| sum += (item[index]-mean)**2 }
-        return sum / (data_set.data_items.length-1)
+        return sum / (data_set.data_items.size-1)
       end
 
       # Get the standard deviation.
@@ -42,7 +43,7 @@ module Ai4cr
       # Get the sample mode.
       def self.mode(data_set, attribute)
         index = data_set.get_index(attribute)
-        count = Hash.new {0}
+        count = Hash(String | Int32 | Float64, Int32).new {0}
         max_count = 0
         mode = nil
         data_set.data_items.each do |data_item|
@@ -58,16 +59,32 @@ module Ai4cr
 
       # Get the maximum value of an attribute in the data set
       def self.max(data_set, attribute)
+        # index = data_set.get_index(attribute)
+        # item = data_set.data_items.sort {|x,y| x[index] <=> y[index]}.last?
+        # puts "max item:#{item}"
+        # return (item) ? item[index] : (-1.0/0)
         index = data_set.get_index(attribute)
-        item = data_set.data_items.max {|x,y| x[index] <=> y[index]}
-        return (item) ? item[index] : (-1.0/0)
+        column = data_set.data_items.each {|row| row[index]}
+        return (column) ? column.max : (1.0/0)
       end
 
       # Get the minimum value of an attribute in the data set
       def self.min(data_set, attribute)
+        # index = data_set.get_index(attribute)
+        # klass = data_set.data_items.first[index].class
+        # item = case klass
+        #        when String
+        #          data_set.data_items.sort {|x.as(Array(String)),y.as(Array(String))| x[index].as(String) <=> y[index].as(String)}.first?
+        #        when Int32
+        #          data_set.data_items.sort {|x,y| x[index].as(Int32) <=> y[index].as(Int32)}.first?
+        #        else
+        #          data_set.data_items.sort {|x,y| x[index].as(Float64) <=> y[index].as(Float64)}.first?
+        #        end
+        # puts "min item:#{item}"
+        # return (item) ? item[index] : (1.0/0)
         index = data_set.get_index(attribute)
-        item = data_set.data_items.min {|x,y| x[index] <=> y[index]}
-        return (item) ? item[index] : (1.0/0)
+        column = data_set.data_items.each {|row| row[index]}
+        return (column) ? column.min : (1.0/0)
       end
 
     end

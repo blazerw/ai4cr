@@ -19,6 +19,7 @@ def common_data_set
     [1,1,1,1,1,1,1,1,-1,-1,-1,-1,-1,-1,-1,-1],
   ]
 end
+
 describe Ai4cr::NeuralNetwork::Hopfield do
 
   it "can initialize nodes" do

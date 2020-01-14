@@ -19,8 +19,10 @@ module Ai4cr
     # Optionally, you can assign a label to the attributes, using 
     # the data_labels property.
     class DataSet
-
-      getter :data_labels, :data_items
+      alias CellType = Float64 | Int32 | String
+      # alias DataSetItemsType = Array(Array(String | Int32 | Float64)) | Array(Array(String | Int32)) | Array(Array(String | Float64)) | Array(Array(Int32)) | Array(Array(String))
+      alias DataSetItemsType = Array(Array(CellType))
+      @data_items : DataSetItemsType | Nil
 
       # Create a new DataSet. By default, empty.
       # Optionaly, you can provide the initial data items and data labels.
@@ -29,25 +31,34 @@ module Ai4cr
       # 
       # If you provide data items, but no data labels, the data set will
       # use the default data label values (see set_data_labels)
-      def initialize(data_items : Array(Array(Int32)), data_labels : Array(String)? = nil)
+      def initialize(data_items : DataSetItemsType? = nil, data_labels : Array(String)? = nil)
         @data_labels = [] of String
-        @data_items = data_items || [] of Array(Int32)
+        @data_items = data_items
+        @data_items = Array(Array(String | Int32 | Float64)).new if @data_items.nil?
         set_data_labels(data_labels) if data_labels
         set_data_items(data_items) if data_items
       end
 
       # Retrieve a new DataSet, with the item(s) selected by the provided 
       # index. You can specify an index range, too.
-      def [](index)
-        selected_items = (index.is_a?(Fixnum)) ?
-                [@data_items[index]] : @data_items[index]
+      def [](index : Int32 | Range)
+        check_not_empty
+        # selected_items = (index.is_a?(Int)) ?
+        #   [@data_items.not_nil![index]] : @data_items.not_nil![index.as(Range)]
+        selected_items : DataSetItemsType = if index.is_a?(Int)
+                                              [@data_items.not_nil![index.as(Int32)]]
+                                            else
+                                              index.map do |i|
+                                                @data_items.not_nil![i]
+                                              end
+                                            end
         return DataSet.new(data_items: selected_items,
                            data_labels: @data_labels)
       end
 
       # Load data items from csv file
       def load_csv(filepath)
-        items = [] of Array(Int32)
+        items = [] of Array(String | Int32)
         open_csv_file(filepath) do |entry|
           items << entry
         end
@@ -58,29 +69,25 @@ module Ai4cr
       # for each line, a block is called and the row is passed to the block
       # ruby1.8 and 1.9 safe
       def open_csv_file(filepath, &block)
-        if CSV.const_defined? :Reader
-          CSV::Reader.parse(File.open(filepath, 'r')) do |row|
-            block.call row
-          end
-        else
-          CSV.parse(File.open(filepath, 'r')) do |row|
-            block.call row
-          end
+        CSV.each_row(File.open(filepath, "r")) do |row|
+          yield row
         end
       end
 
       # Load data items from csv file. The first row is used as data labels.
       def load_csv_with_labels(filepath)
         load_csv(filepath)
-        @data_labels = @data_items.shift
+        check_not_empty
+        labels = @data_items.not_nil!.shift
+        @data_labels = labels.map { |label| label.to_s }
         return self
       end
 
       # Same as load_csv, but it will try to convert cell contents as numbers.
       def parse_csv(filepath)
-        items = [] of Array(Float64)
+        items = [] of Array(String | Float64)
         open_csv_file(filepath) do |row|
-          items << row.collect{|x| (is_number?(x) ? Float.to_f64(x) : x) }
+          items << row.map {|x| (is_number?(x) ? Float64.new(x) : x) }
         end
         set_data_items(items)
       end
@@ -88,7 +95,9 @@ module Ai4cr
       # Same as load_csv_with_labels, but it will try to convert cell contents as numbers.
       def parse_csv_with_labels(filepath)
         parse_csv(filepath)
-        @data_labels = @data_items.shift
+        check_not_empty
+        labels = @data_items.not_nil!.shift
+        @data_labels = labels.map { |label| label.to_s }
         return self
       end
 
@@ -134,10 +143,12 @@ module Ai4cr
       #        ]
       # 
       # This method returns the classifier (self), allowing method chaining.
-      def set_data_items(items)
+      # def set_data_items(items : Array(Array(String | Int32 | Float64))?)
+      def set_data_items(items = nil)
+        raise ArgumentError.new("Weird data passed as data_items.") unless items.is_a?(DataSetItemsType)
         check_data_items(items)
-        @data_labels = default_data_labels(items) if @data_labels.empty?
-        @data_items = items
+        @data_labels = default_data_labels(items.not_nil!) if @data_labels.empty?
+        @data_items = items.not_nil!
         return self
       end
 
@@ -152,7 +163,7 @@ module Ai4cr
       #     [5, 85], 
       #     #<Set: {"Y", "N"}>]
       def build_domains
-        @data_labels.collect {|attr_label| build_domain(attr_label) }
+        @data_labels.map {|attr_label| build_domain(attr_label) }
       end
 
       # Returns a Set instance containing all possible values for an attribute
@@ -168,31 +179,34 @@ module Ai4cr
       # 
       #   build_domain(2) # In this example, the third attribute is gender
       #   => #<Set: {"M", "F"}>
-      def build_domain(attr)
+      def build_domain(attr : String | Int32)
         index = get_index(attr)
-        if @data_items.first[index].is_a?(Numeric)
+        check_not_empty
+        if @data_items.not_nil!.first[index].is_a?(Int)
           return [Statistics.min(self, index), Statistics.max(self, index)]
         else
-          return @data_items.inject(Set.new){|domain, x| domain << x[index]}
+          return @data_items.not_nil!.reduce(Set(String | Int32 | Float64).new){|domain, x| domain << x[index]}
         end
       end
 
       # Returns attributes number, including class attribute
       def num_attributes
-        return (@data_items.empty?) ? 0 : @data_items.first.size
+        return (@data_items.nil? || @data_items.not_nil!.empty?) ? 0 : @data_items.not_nil!.first.size
       end
 
       # Returns the index of a given attribute (0-based).
       # For example, if "gender" is the third attribute, then:
       #   get_index("gender") 
       #   => 2
-      def get_index(attr)
-        return (attr.is_a?(Fixnum) || attr.is_a?(Range)) ? attr : @data_labels.index(attr)
+      def get_index(attr) : Int32
+        ret = (attr.is_a?(Int) || attr.is_a?(Range)) ? attr : @data_labels.index(attr)
+        raise ArgumentError.new "Index or column not found." if ret.nil?
+        ret.not_nil!
       end
 
       # Raise an exception if there is no data item.
       def check_not_empty
-        if @data_items.empty?
+        if @data_items.nil? || @data_items.not_nil!.empty?
           raise ArgumentError.new "Examples data set must not be empty."
         end
       end
@@ -215,13 +229,13 @@ module Ai4cr
       # Returns an array with the mean value of numeric attributes, and 
       # the most frequent value of non numeric attributes
       def get_mean_or_mode
-        mean = [] of Float64
+        mean = Array(Float64 | Int32 | String).new(num_attributes)
         num_attributes.times do |i|
           mean[i] =
-                  if @data_items.first[i].is_a?(Number)
+                  if @data_items.not_nil!.first[i].is_a?(Number)
                     Statistics.mean(self, i)
                   else
-                    Statistics.mode(self, i)
+                    "#{Statistics.mode(self, i)}"
                   end
         end
         return mean
@@ -232,8 +246,17 @@ module Ai4cr
         data_labels.last
       end
 
+      def data_items
+        check_not_empty
+        @data_items.not_nil!
+      end
+
+      def data_labels
+        @data_labels
+      end
+
       protected def is_number?(x)
-        true if Float.to_f64(x) rescue false
+        true if Float64.new(x) rescue false
       end
 
       protected def check_data_items(data_items)
@@ -253,11 +276,11 @@ module Ai4cr
       end
 
       protected def check_data_labels(labels)
-        if !@data_items.empty?
-          if labels.size != @data_items.first.size
+        if @data_items && !@data_items.not_nil!.empty?
+          if labels.size != @data_items.not_nil!.first.size
             raise ArgumentError.new "Number of labels and attributes do not match. " +
               "#{labels.size} labels and " +
-              "#{@data_items.first.size} attributes found."
+              "#{@data_items.not_nil!.first.size} attributes found."
           end
         end
       end
